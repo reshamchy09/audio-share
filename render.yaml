@@ -1,0 +1,16 @@
+services:
+  - type: web
+    name: audio-django
+    env: python
+    buildCommand: "pip install -r requirements.txt"
+    startCommand: "daphne project.asgi:application -b 0.0.0.0 -p 10000"
+    envVars:
+      - key: REDIS_URL
+        fromService:
+          name: audio-redis
+          type: redis
+          property: connectionString
+
+  - type: redis
+    name: audio-redis
+    ipAllowList: []
