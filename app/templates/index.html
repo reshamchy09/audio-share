@@ -2,74 +2,495 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Audio Monitor</title>
+  <link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Outfit:wght@300;400;600&display=swap" rel="stylesheet">
   <style>
-    body { font-family: sans-serif; max-width: 480px; margin: 60px auto; background: #0f0f0f; color: #eee; }
-    h2   { margin-bottom: 24px; }
-    .btn { padding: 12px 28px; border: none; border-radius: 8px; font-size: 15px; cursor: pointer; margin: 8px; }
-    .start  { background: #1D9E75; color: #fff; }
-    .stop   { background: #c0392b; color: #fff; }
-    .record { background: #7F77DD; color: #fff; }
-    #status { margin-top: 20px; font-size: 13px; color: #aaa; }
-    canvas  { display: block; width: 100%; height: 80px; background: #1a1a1a; border-radius: 8px; margin-top: 20px; }
+    :root {
+      --bg:        #080b0f;
+      --surface:   #0e1318;
+      --border:    #1a2530;
+      --accent:    #00e5a0;
+      --accent2:   #0099ff;
+      --danger:    #ff3b5c;
+      --record:    #bf5fff;
+      --text:      #d4e0ec;
+      --muted:     #4a6070;
+      --mono:      'Share Tech Mono', monospace;
+      --sans:      'Outfit', sans-serif;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: var(--sans);
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+      overflow-x: hidden;
+    }
+
+    /* Subtle grid background */
+    body::before {
+      content: '';
+      position: fixed;
+      inset: 0;
+      background-image:
+        linear-gradient(rgba(0,229,160,0.03) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(0,229,160,0.03) 1px, transparent 1px);
+      background-size: 40px 40px;
+      pointer-events: none;
+      z-index: 0;
+    }
+
+    .card {
+      position: relative;
+      z-index: 1;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 32px;
+      width: 100%;
+      max-width: 520px;
+      box-shadow: 0 0 60px rgba(0,229,160,0.04), 0 20px 60px rgba(0,0,0,0.6);
+    }
+
+    /* Header */
+    .header {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 28px;
+    }
+    .logo {
+      width: 36px; height: 36px;
+      background: linear-gradient(135deg, var(--accent), var(--accent2));
+      border-radius: 10px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 18px;
+    }
+    .title-block h1 {
+      font-size: 17px;
+      font-weight: 600;
+      letter-spacing: 0.02em;
+      color: #fff;
+    }
+    .title-block p {
+      font-size: 11px;
+      color: var(--muted);
+      font-family: var(--mono);
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    /* Status bar */
+    .status-bar {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 10px 14px;
+      margin-bottom: 24px;
+      font-family: var(--mono);
+      font-size: 12px;
+      color: var(--muted);
+      transition: all 0.3s ease;
+    }
+    .status-bar.connected { border-color: rgba(0,229,160,0.3); color: var(--accent); }
+    .status-bar.error     { border-color: rgba(255,59,92,0.3);  color: var(--danger); }
+
+    .status-dot {
+      width: 7px; height: 7px;
+      border-radius: 50%;
+      background: var(--muted);
+      flex-shrink: 0;
+      transition: background 0.3s;
+    }
+    .status-bar.connected .status-dot {
+      background: var(--accent);
+      box-shadow: 0 0 6px var(--accent);
+      animation: pulse 2s infinite;
+    }
+    .status-bar.error .status-dot { background: var(--danger); }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50%       { opacity: 0.4; }
+    }
+
+    /* Visualizer */
+    .viz-wrapper {
+      position: relative;
+      margin-bottom: 24px;
+      border-radius: 10px;
+      overflow: hidden;
+      background: var(--bg);
+      border: 1px solid var(--border);
+    }
+    canvas {
+      display: block;
+      width: 100%;
+      height: 100px;
+    }
+    .viz-label {
+      position: absolute;
+      top: 8px; left: 12px;
+      font-family: var(--mono);
+      font-size: 10px;
+      color: var(--muted);
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+    }
+    .viz-hz {
+      position: absolute;
+      top: 8px; right: 12px;
+      font-family: var(--mono);
+      font-size: 10px;
+      color: var(--muted);
+    }
+
+    /* Stats row */
+    .stats {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 10px;
+      margin-bottom: 24px;
+    }
+    .stat {
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 10px 12px;
+      text-align: center;
+    }
+    .stat-val {
+      font-family: var(--mono);
+      font-size: 15px;
+      color: var(--accent2);
+      font-weight: 600;
+    }
+    .stat-lbl {
+      font-size: 10px;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      margin-top: 3px;
+    }
+
+    /* Buttons */
+    .controls {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+      margin-bottom: 10px;
+    }
+    .btn {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      padding: 13px 20px;
+      border: none;
+      border-radius: 10px;
+      font-family: var(--sans);
+      font-size: 14px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.15s ease;
+      letter-spacing: 0.02em;
+    }
+    .btn:hover  { transform: translateY(-1px); filter: brightness(1.1); }
+    .btn:active { transform: translateY(0);    filter: brightness(0.95); }
+
+    .btn-start  { background: linear-gradient(135deg, #00b87a, #00e5a0); color: #00150d; }
+    .btn-stop   { background: linear-gradient(135deg, #c0182f, #ff3b5c); color: #fff; }
+    .btn-record { background: linear-gradient(135deg, #8833cc, #bf5fff); color: #fff; grid-column: 1 / -1; }
+    .btn-record.recording { background: linear-gradient(135deg, #c0182f, #ff3b5c); animation: recpulse 1s infinite; }
+
+    @keyframes recpulse {
+      0%, 100% { box-shadow: 0 0 0 0 rgba(255,59,92,0.4); }
+      50%       { box-shadow: 0 0 0 8px rgba(255,59,92,0); }
+    }
+
+    .btn:disabled { opacity: 0.35; cursor: not-allowed; transform: none; }
+
+    /* Volume meter */
+    .volume-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-top: 14px;
+    }
+    .vol-label {
+      font-family: var(--mono);
+      font-size: 10px;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      flex-shrink: 0;
+      width: 32px;
+    }
+    .vol-track {
+      flex: 1;
+      height: 4px;
+      background: var(--border);
+      border-radius: 2px;
+      overflow: hidden;
+    }
+    .vol-fill {
+      height: 100%;
+      border-radius: 2px;
+      background: linear-gradient(90deg, var(--accent), var(--accent2));
+      width: 0%;
+      transition: width 0.05s ease;
+    }
   </style>
 </head>
 <body>
-  <h2>Live Audio Monitor</h2>
-  <button class="btn start"  onclick="sendCommand('start')">▶ Start</button>
-  <button class="btn stop"   onclick="sendCommand('stop')">■ Stop</button>
-  <button class="btn record" onclick="toggleRecord()" id="recBtn">⏺ Record</button>
-  <div id="status">Connecting…</div>
-  <canvas id="viz"></canvas>
+  <div class="card">
+
+    <div class="header">
+      <div class="logo">🎙</div>
+      <div class="title-block">
+        <h1>Live Audio Monitor</h1>
+        <p>audio-share-bxfc · ws/browser</p>
+      </div>
+    </div>
+
+    <div class="status-bar" id="statusBar">
+      <div class="status-dot"></div>
+      <span id="statusText">Connecting…</span>
+    </div>
+
+    <div class="viz-wrapper">
+      <div class="viz-label">Waveform</div>
+      <div class="viz-hz" id="vizHz">44100 Hz · Stereo</div>
+      <canvas id="viz"></canvas>
+    </div>
+
+    <div class="stats">
+      <div class="stat">
+        <div class="stat-val" id="statFrames">0</div>
+        <div class="stat-lbl">Frames</div>
+      </div>
+      <div class="stat">
+        <div class="stat-val" id="statKbps">0</div>
+        <div class="stat-lbl">KB recv</div>
+      </div>
+      <div class="stat">
+        <div class="stat-val" id="statLatency">—</div>
+        <div class="stat-lbl">Status</div>
+      </div>
+    </div>
+
+    <div class="controls">
+      <button class="btn btn-start"  id="btnStart"  onclick="sendCommand('start')">▶ Start</button>
+      <button class="btn btn-stop"   id="btnStop"   onclick="sendCommand('stop')">■ Stop</button>
+      <button class="btn btn-record" id="recBtn"    onclick="toggleRecord()">⏺ Record</button>
+    </div>
+
+    <div class="volume-row">
+      <div class="vol-label">VOL</div>
+      <div class="vol-track"><div class="vol-fill" id="volFill"></div></div>
+    </div>
+
+  </div>
 
   <script>
- const status  = document.getElementById('status');
-const canvas  = document.getElementById('viz');
-const ctx     = canvas.getContext('2d');
-const SAMPLE_RATE = 16000;
+    const statusBar  = document.getElementById('statusBar');
+    const statusText = document.getElementById('statusText');
+    const canvas     = document.getElementById('viz');
+    const ctx        = canvas.getContext('2d');
+    const volFill    = document.getElementById('volFill');
+    const statFrames = document.getElementById('statFrames');
+    const statKbps   = document.getElementById('statKbps');
+    const statLatency= document.getElementById('statLatency');
 
-let audioCtx, isRecording = false, recordedChunks = [];
+    const SAMPLE_RATE = 44100;
+    const CHANNELS    = 2;
 
-// ✅ Fix 1: hardcode wss:// URL
-const ws = new WebSocket("wss://audio-share-bxfc.onrender.com/ws/browser/");
+    let audioCtx, isRecording = false, recordedChunks = [];
+    let frameCount = 0, bytesReceived = 0;
 
-ws.onopen  = () => status.textContent = 'Connected — waiting for audio…';
-ws.onclose = () => status.textContent = 'Disconnected';
-ws.onerror = (e) => status.textContent = 'Connection error';
+    // ── WebSocket ──────────────────────────────────────────────────────────────
+    const ws = new WebSocket("wss://audio-share-bxfc.onrender.com/ws/browser/");
 
-ws.onmessage = async (e) => {
-  const msg = JSON.parse(e.data);
-  if (msg.type === 'ping') return; // ignore keepalive pings
-  if (!msg.audio) return;
+    ws.onopen = () => {
+      statusBar.className = 'status-bar connected';
+      statusText.textContent = 'Connected — waiting for audio…';
+      statLatency.textContent = 'LIVE';
+      statLatency.style.color = 'var(--accent)';
+    };
 
-  const hex   = msg.audio;
-  const bytes = new Uint8Array(hex.match(/.{1,2}/g).map(b => parseInt(b, 16)));
-  const pcm   = new Int16Array(bytes.buffer);
+    ws.onclose = () => {
+      statusBar.className = 'status-bar error';
+      statusText.textContent = 'Disconnected — refresh to reconnect';
+      statLatency.textContent = 'OFF';
+      statLatency.style.color = 'var(--danger)';
+    };
 
-  if (!audioCtx) audioCtx = new AudioContext({ sampleRate: SAMPLE_RATE });
-  const float32 = new Float32Array(pcm.length);
-  for (let i = 0; i < pcm.length; i++) float32[i] = pcm[i] / 32768;
+    ws.onerror = () => {
+      statusBar.className = 'status-bar error';
+      statusText.textContent = 'Connection error';
+    };
 
-  const buffer = audioCtx.createBuffer(1, float32.length, SAMPLE_RATE);
-  buffer.copyToChannel(float32, 0);
-  const source = audioCtx.createBufferSource();
-  source.buffer = buffer;
-  source.connect(audioCtx.destination);
-  source.start();
+    ws.onmessage = async (e) => {
+      const msg = JSON.parse(e.data);
+      if (msg.type === 'ping') return;
+      if (!msg.audio) return;
 
-  drawWave(float32);
-  if (isRecording) recordedChunks.push(...pcm);
-};
+      // Hex → bytes → Int16 PCM
+      const hex   = msg.audio;
+      const bytes = new Uint8Array(hex.match(/.{1,2}/g).map(b => parseInt(b, 16)));
+      const pcm   = new Int16Array(bytes.buffer);
 
-// ✅ Fix 2: send command via WebSocket
-function sendCommand(cmd) {
-  if (ws.readyState === WebSocket.OPEN) {
-    ws.send(JSON.stringify({ command: cmd }));
-    status.textContent = `Command sent: ${cmd}`;
-  } else {
-    status.textContent = 'Not connected — please refresh';
-  }
-}
+      bytesReceived += bytes.length;
+      frameCount++;
+      statFrames.textContent = frameCount;
+      statKbps.textContent   = (bytesReceived / 1024).toFixed(1);
+
+      // Web Audio playback
+      if (!audioCtx) audioCtx = new AudioContext({ sampleRate: SAMPLE_RATE });
+
+      const frameCount2 = Math.floor(pcm.length / CHANNELS);
+      const buffer = audioCtx.createBuffer(CHANNELS, frameCount2, SAMPLE_RATE);
+
+      for (let ch = 0; ch < CHANNELS; ch++) {
+        const channelData = buffer.getChannelData(ch);
+        for (let i = 0; i < frameCount2; i++) {
+          channelData[i] = pcm[i * CHANNELS + ch] / 32768;
+        }
+      }
+
+      const source = audioCtx.createBufferSource();
+      source.buffer = buffer;
+      source.connect(audioCtx.destination);
+      source.start();
+
+      // Visualize left channel
+      const leftCh = buffer.getChannelData(0);
+      drawWave(leftCh);
+      updateVolume(leftCh);
+
+      if (isRecording) recordedChunks.push(...pcm);
+    };
+
+    // ── Waveform ───────────────────────────────────────────────────────────────
+    function drawWave(samples) {
+      canvas.width  = canvas.offsetWidth  * window.devicePixelRatio;
+      canvas.height = canvas.offsetHeight * window.devicePixelRatio;
+      ctx.scale(window.devicePixelRatio, window.devicePixelRatio);
+
+      const W = canvas.offsetWidth;
+      const H = canvas.offsetHeight;
+      const mid = H / 2;
+
+      ctx.clearRect(0, 0, W, H);
+
+      // Center line
+      ctx.strokeStyle = 'rgba(26,37,48,0.8)';
+      ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.moveTo(0, mid); ctx.lineTo(W, mid); ctx.stroke();
+
+      // Waveform gradient
+      const grad = ctx.createLinearGradient(0, 0, W, 0);
+      grad.addColorStop(0,   '#00e5a0');
+      grad.addColorStop(0.5, '#00b8ff');
+      grad.addColorStop(1,   '#00e5a0');
+
+      ctx.strokeStyle = grad;
+      ctx.lineWidth   = 1.5;
+      ctx.lineJoin    = 'round';
+      ctx.beginPath();
+
+      const step = Math.max(1, Math.floor(samples.length / W));
+      for (let x = 0; x < W; x++) {
+        const s = samples[x * step] || 0;
+        const y = mid + s * mid * 0.9;
+        x === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+      }
+      ctx.stroke();
+
+      // Fill under wave
+      ctx.lineTo(W, mid);
+      ctx.lineTo(0, mid);
+      ctx.closePath();
+      const fillGrad = ctx.createLinearGradient(0, 0, 0, H);
+      fillGrad.addColorStop(0, 'rgba(0,229,160,0.12)');
+      fillGrad.addColorStop(1, 'rgba(0,229,160,0)');
+      ctx.fillStyle = fillGrad;
+      ctx.fill();
+    }
+
+    function updateVolume(samples) {
+      let sum = 0;
+      for (let i = 0; i < samples.length; i++) sum += samples[i] * samples[i];
+      const rms = Math.sqrt(sum / samples.length);
+      const pct = Math.min(100, rms * 300);
+      volFill.style.width = pct + '%';
+    }
+
+    // ── Controls ───────────────────────────────────────────────────────────────
+    function sendCommand(cmd) {
+      if (ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({ command: cmd }));
+        statusText.textContent = `Command sent: ${cmd}`;
+      } else {
+        statusText.textContent = 'Not connected — please refresh';
+      }
+    }
+
+    function toggleRecord() {
+      const btn = document.getElementById('recBtn');
+      if (!isRecording) {
+        isRecording    = true;
+        recordedChunks = [];
+        btn.textContent = '⏹ Stop Recording';
+        btn.classList.add('recording');
+      } else {
+        isRecording = false;
+        btn.textContent = '⏺ Record';
+        btn.classList.remove('recording');
+        if (recordedChunks.length > 0) {
+          downloadWav(new Int16Array(recordedChunks));
+        }
+      }
+    }
+
+    function downloadWav(samples) {
+      const byteRate   = SAMPLE_RATE * CHANNELS * 2;
+      const blockAlign = CHANNELS * 2;
+      const header     = new ArrayBuffer(44);
+      const view       = new DataView(header);
+      const write      = (o, s) => { for (let i = 0; i < s.length; i++) view.setUint8(o + i, s.charCodeAt(i)); };
+
+      write(0, 'RIFF'); view.setUint32(4, 36 + samples.byteLength, true);
+      write(8, 'WAVE'); write(12, 'fmt ');
+      view.setUint32(16, 16, true);
+      view.setUint16(20, 1, true);
+      view.setUint16(22, CHANNELS, true);
+      view.setUint32(24, SAMPLE_RATE, true);
+      view.setUint32(28, byteRate, true);
+      view.setUint16(32, blockAlign, true);
+      view.setUint16(34, 16, true);
+      write(36, 'data'); view.setUint32(40, samples.byteLength, true);
+
+      const blob = new Blob([header, samples.buffer], { type: 'audio/wav' });
+      const a    = Object.assign(document.createElement('a'), {
+        href: URL.createObjectURL(blob),
+        download: `recording_${Date.now()}.wav`
+      });
+      a.click();
+    }
+
+    // Draw idle waveform on load
+    drawWave(new Float32Array(512));
   </script>
 </body>
 </html>
