@@ -6,6 +6,20 @@ from asgiref.sync import async_to_sync
 
 AUDIO_GROUP = "live_audio"
 
+def login_view(request):
+    error = ""
+
+    if request.method == "POST":
+        username = request.POST.get("username")
+        password = request.POST.get("password")
+
+        if username == "admin" and password == "pooja":
+            return redirect("index")
+        else:
+            error = "Invalid username or password"
+
+    return render(request, "login.html", {"error": error})
+
 @csrf_exempt
 def control(request):
     if request.method == "POST":
