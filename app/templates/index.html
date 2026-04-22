@@ -5,61 +5,128 @@
   <title>Audio Monitor</title>
   <style>
     body { font-family: sans-serif; max-width: 480px; margin: 60px auto; background: #0f0f0f; color: #eee; }
-    h2   { margin-bottom: 24px; }
+    h2 { margin-bottom: 24px; }
     .btn { padding: 12px 28px; border: none; border-radius: 8px; font-size: 15px; cursor: pointer; margin: 8px; }
-    .start  { background: #1D9E75; color: #fff; }
-    .stop   { background: #c0392b; color: #fff; }
+    .start { background: #1D9E75; color: #fff; }
+    .stop  { background: #c0392b; color: #fff; }
     .record { background: #7F77DD; color: #fff; }
+    .btn:disabled { opacity: 0.4; cursor: not-allowed; }
     #status { margin-top: 20px; font-size: 13px; color: #aaa; }
-    canvas  { display: block; width: 100%; height: 80px; background: #1a1a1a; border-radius: 8px; margin-top: 20px; }
+    #streamState { margin-top: 8px; font-size: 13px; font-weight: bold; }
+    canvas { display: block; width: 100%; height: 80px; background: #1a1a1a; border-radius: 8px; margin-top: 20px; }
   </style>
 </head>
 <body>
   <h2>Live Audio Monitor</h2>
-  <button class="btn start"  onclick="sendCommand('start')">▶ Start</button>
-  <button class="btn stop"   onclick="sendCommand('stop')">■ Stop</button>
-  <button class="btn record" onclick="toggleRecord()" id="recBtn">⏺ Record</button>
+  <button class="btn start"  id="startBtn"  onclick="sendCommand('start')">▶ Start</button>
+  <button class="btn stop"   id="stopBtn"   onclick="sendCommand('stop')">■ Stop</button>
+  <button class="btn record" id="recBtn"    onclick="toggleRecord()">⏺ Record</button>
   <div id="status">Connecting…</div>
+  <div id="streamState"></div>
   <canvas id="viz"></canvas>
+
   <script>
- const status  = document.getElementById('status');
-const canvas  = document.getElementById('viz');
-const ctx     = canvas.getContext('2d');
-const SAMPLE_RATE = 16000;
-let audioCtx, isRecording = false, recordedChunks = [];
-// ✅ Fix 1: hardcode wss:// URL
-const ws = new WebSocket("wss://audio-share-bxfc.onrender.com/ws/browser/");
-ws.onopen  = () => status.textContent = 'Connected — waiting for audio…';
-ws.onclose = () => status.textContent = 'Disconnected';
-ws.onerror = (e) => status.textContent = 'Connection error';
-ws.onmessage = async (e) => {
-  const msg = JSON.parse(e.data);
-  if (msg.type === 'ping') return; // ignore keepalive pings
-  if (!msg.audio) return;
-  const hex   = msg.audio;
-  const bytes = new Uint8Array(hex.match(/.{1,2}/g).map(b => parseInt(b, 16)));
-  const pcm   = new Int16Array(bytes.buffer);
-  if (!audioCtx) audioCtx = new AudioContext({ sampleRate: SAMPLE_RATE });
-  const float32 = new Float32Array(pcm.length);
-  for (let i = 0; i < pcm.length; i++) float32[i] = pcm[i] / 32768;
-  const buffer = audioCtx.createBuffer(1, float32.length, SAMPLE_RATE);
-  buffer.copyToChannel(float32, 0);
-  const source = audioCtx.createBufferSource();
-  source.buffer = buffer;
-  source.connect(audioCtx.destination);
-  source.start();
-  drawWave(float32);
-  if (isRecording) recordedChunks.push(...pcm);
-};
-// ✅ Fix 2: send command via WebSocket
-function sendCommand(cmd) {
-  if (ws.readyState === WebSocket.OPEN) {
-    ws.send(JSON.stringify({ command: cmd }));
-    status.textContent = `Command sent: ${cmd}`;
-  } else {
-    status.textContent = 'Not connected — please refresh';
-  }
-}
+    const statusEl     = document.getElementById('status');
+    const streamEl     = document.getElementById('streamState');
+    const canvas       = document.getElementById('viz');
+    const ctx          = canvas.getContext('2d');
+    const startBtn     = document.getElementById('startBtn');
+    const stopBtn      = document.getElementById('stopBtn');
+    const SAMPLE_RATE  = 16000;
+
+    let audioCtx, isRecording = false, recordedChunks = [];
+
+    const ws = new WebSocket("wss://audio-share-bxfc.onrender.com/ws/browser/");
+
+    ws.onopen  = () => statusEl.textContent = 'Connected — waiting for audio…';
+    ws.onclose = () => statusEl.textContent = 'Disconnected';
+    ws.onerror = ()  => statusEl.textContent = 'Connection error';
+
+    ws.onmessage = async (e) => {
+      const msg = JSON.parse(e.data);
+
+      // Keepalive ping — reply with pong so server knows we're alive
+      if (msg.type === 'ping') {
+        ws.send(JSON.stringify({ type: 'pong' }));
+        return;
+      }
+
+      // Status update broadcast from server (start/stop confirmed)
+      if (msg.status) {
+        const running = msg.status === 'start';
+        streamEl.textContent    = running ? '🟢 Streaming active' : '🔴 Streaming stopped';
+        streamEl.style.color    = running ? '#1D9E75' : '#c0392b';
+        startBtn.disabled       = running;
+        stopBtn.disabled        = !running;
+        statusEl.textContent    = running ? 'Audio streaming started' : 'Audio streaming stopped';
+        return;
+      }
+
+      // Audio frame
+      if (!msg.audio) return;
+      const bytes  = new Uint8Array(msg.audio.match(/.{1,2}/g).map(b => parseInt(b, 16)));
+      const pcm    = new Int16Array(bytes.buffer);
+
+      if (!audioCtx) audioCtx = new AudioContext({ sampleRate: SAMPLE_RATE });
+
+      const float32 = new Float32Array(pcm.length);
+      for (let i = 0; i < pcm.length; i++) float32[i] = pcm[i] / 32768;
+
+      const buffer = audioCtx.createBuffer(1, float32.length, SAMPLE_RATE);
+      buffer.copyToChannel(float32, 0);
+      const source = audioCtx.createBufferSource();
+      source.buffer = buffer;
+      source.connect(audioCtx.destination);
+      source.start();
+      drawWave(float32);
+
+      if (isRecording) recordedChunks.push(...pcm);
+    };
+
+    function sendCommand(cmd) {
+      if (ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({ command: cmd }));
+        statusEl.textContent = `Sending command: ${cmd}…`;
+      } else {
+        statusEl.textContent = 'Not connected — please refresh';
+      }
+    }
+
+    function toggleRecord() {
+      isRecording = !isRecording;
+      const btn = document.getElementById('recBtn');
+      btn.textContent = isRecording ? '⏹ Stop Recording' : '⏺ Record';
+      btn.style.background = isRecording ? '#e67e22' : '#7F77DD';
+      if (!isRecording && recordedChunks.length) downloadRecording();
+    }
+
+    function downloadRecording() {
+      const pcm    = new Int16Array(recordedChunks);
+      const blob   = new Blob([pcm.buffer], { type: 'audio/pcm' });
+      const url    = URL.createObjectURL(blob);
+      const a      = document.createElement('a');
+      a.href       = url;
+      a.download   = `recording_${Date.now()}.pcm`;
+      a.click();
+      recordedChunks = [];
+    }
+
+    function drawWave(float32) {
+      canvas.width  = canvas.offsetWidth;
+      canvas.height = canvas.offsetHeight;
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      ctx.strokeStyle = '#1D9E75';
+      ctx.lineWidth   = 1.5;
+      ctx.beginPath();
+      const step = Math.ceil(float32.length / canvas.width);
+      const mid  = canvas.height / 2;
+      for (let x = 0; x < canvas.width; x++) {
+        const sample = float32[x * step] ?? 0;
+        const y = mid + sample * mid;
+        x === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+      }
+      ctx.stroke();
+    }
   </script>
 </body>
-</html>       
+</html>
