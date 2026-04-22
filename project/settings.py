@@ -27,10 +27,9 @@ SECRET_KEY = 'django-insecure-2ci29)@u5krywpu060b^qonugvwhcyo)+^m*#$iacnl(10@0fs
 DEBUG = True
 
 ALLOWED_HOSTS = [
-    ".onrender.com",
+    "audio-share-bxfc.onrender.com",
     "localhost",
     "127.0.0.1",
-    '*'
 ]
 
 # Application definition
@@ -138,4 +137,3 @@ CSRF_TRUSTED_ORIGINS = [
 
 CSRF_COOKIE_SECURE = True
 SESSION_COOKIE_SECURE = True
-SECURE_SSL_REDIRECT = True
