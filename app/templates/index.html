@@ -15,6 +15,18 @@
 
     h2 { margin-bottom: 20px; }
 
+    button {
+      padding: 10px 18px;
+      margin: 5px;
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+      font-weight: bold;
+    }
+
+    .start { background: #1D9E75; color: white; }
+    .stop { background: #c0392b; color: white; }
+
     #status, #streamState {
       margin-top: 10px;
       font-size: 13px;
@@ -42,8 +54,14 @@
 
 <h2>Live Audio Monitor</h2>
 
+<!-- 🔥 FIREBASE CONTROL BUTTONS -->
+<div>
+  <button class="start" onclick="setCommand('start')">▶ START</button>
+  <button class="stop" onclick="setCommand('stop')">■ STOP</button>
+</div>
+
 <div class="box">
-  🔥 Firebase Control: <span id="firebaseState">Waiting...</span>
+  🔥 Firebase Command: <span id="firebaseState">Waiting...</span>
 </div>
 
 <div id="streamState">🔴 Not streaming</div>
@@ -57,24 +75,30 @@
 
 <script>
 /* ─────────────────────────────
-   FIREBASE CONFIG (REPLACE THIS)
+   FIREBASE CONFIG
 ───────────────────────────── */
-   const firebaseConfig = {
-        apiKey: "AIzaSyDESRIO-UrfdLtizx-NnyGYbc3siYJn69I",
-        authDomain: "videoxyz12-99048.firebaseapp.com",
-        databaseURL: "https://videoxyz12-99048-default-rtdb.firebaseio.com",
-        projectId: "videoxyz12-99048",
-        storageBucket: "videoxyz12-99048.appspot.com",
-        messagingSenderId: "160214659694",
-        appId: "1:160214659694:web:65cddc8c03acbf9296ec7f",
-        measurementId: "G-L3GJQYHL8T"
-    };
+const firebaseConfig = {
+  apiKey: "AIzaSyDESRIO-UrfdLtizx-NnyGYbc3siYJn69I",
+  authDomain: "videoxyz12-99048.firebaseapp.com",
+  databaseURL: "https://videoxyz12-99048-default-rtdb.firebaseio.com",
+  projectId: "videoxyz12-99048",
+  storageBucket: "videoxyz12-99048.appspot.com",
+  messagingSenderId: "160214659694",
+  appId: "1:160214659694:web:65cddc8c03acbf9296ec7f"
+};
 
 firebase.initializeApp(firebaseConfig);
 const db = firebase.database();
 
 /* ─────────────────────────────
-   DOM
+   SET START / STOP COMMAND
+───────────────────────────── */
+function setCommand(cmd) {
+  db.ref("control/audio_stream/command").set(cmd);
+}
+
+/* ─────────────────────────────
+   UI ELEMENTS
 ───────────────────────────── */
 const statusEl = document.getElementById("status");
 const streamEl = document.getElementById("streamState");
@@ -130,7 +154,7 @@ ws.onmessage = (e) => {
 };
 
 /* ─────────────────────────────
-   FIREBASE START / STOP LISTENER
+   FIREBASE LISTENER (REALTIME STATUS)
 ───────────────────────────── */
 db.ref("control/audio_stream/command")
   .on("value", (snapshot) => {
