@@ -2,131 +2,178 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>Audio Monitor</title>
+  <title>Audio Monitor (Firebase Control)</title>
+
   <style>
-    body { font-family: sans-serif; max-width: 480px; margin: 60px auto; background: #0f0f0f; color: #eee; }
-    h2 { margin-bottom: 24px; }
-    .btn { padding: 12px 28px; border: none; border-radius: 8px; font-size: 15px; cursor: pointer; margin: 8px; }
-    .start { background: #1D9E75; color: #fff; }
-    .stop  { background: #c0392b; color: #fff; }
-    .record { background: #7F77DD; color: #fff; }
-    .btn:disabled { opacity: 0.4; cursor: not-allowed; }
-    #status { margin-top: 20px; font-size: 13px; color: #aaa; }
-    #streamState { margin-top: 8px; font-size: 13px; font-weight: bold; }
-    canvas { display: block; width: 100%; height: 80px; background: #1a1a1a; border-radius: 8px; margin-top: 20px; }
+    body {
+      font-family: sans-serif;
+      max-width: 480px;
+      margin: 60px auto;
+      background: #0f0f0f;
+      color: #eee;
+    }
+
+    h2 { margin-bottom: 20px; }
+
+    #status, #streamState {
+      margin-top: 10px;
+      font-size: 13px;
+      color: #aaa;
+    }
+
+    canvas {
+      width: 100%;
+      height: 80px;
+      background: #1a1a1a;
+      border-radius: 8px;
+      margin-top: 20px;
+    }
+
+    .box {
+      padding: 10px;
+      background: #1b1b1b;
+      border-radius: 8px;
+      margin-top: 10px;
+    }
   </style>
 </head>
+
 <body>
-  <h2>Live Audio Monitor</h2>
-  <button class="btn start"  id="startBtn"  onclick="sendCommand('start')">▶ Start</button>
-  <button class="btn stop"   id="stopBtn"   onclick="sendCommand('stop')">■ Stop</button>
-  <button class="btn record" id="recBtn"    onclick="toggleRecord()">⏺ Record</button>
-  <div id="status">Connecting…</div>
-  <div id="streamState"></div>
-  <canvas id="viz"></canvas>
 
-  <script>
-    const statusEl     = document.getElementById('status');
-    const streamEl     = document.getElementById('streamState');
-    const canvas       = document.getElementById('viz');
-    const ctx          = canvas.getContext('2d');
-    const startBtn     = document.getElementById('startBtn');
-    const stopBtn      = document.getElementById('stopBtn');
-    const SAMPLE_RATE  = 16000;
+<h2>Live Audio Monitor</h2>
 
-    let audioCtx, isRecording = false, recordedChunks = [];
+<div class="box">
+  🔥 Firebase Control: <span id="firebaseState">Waiting...</span>
+</div>
 
-    const ws = new WebSocket("wss://audio-share-bxfc.onrender.com/ws/browser/");
+<div id="streamState">🔴 Not streaming</div>
+<div id="status">Connecting...</div>
 
-    ws.onopen  = () => statusEl.textContent = 'Connected — waiting for audio…';
-    ws.onclose = () => statusEl.textContent = 'Disconnected';
-    ws.onerror = ()  => statusEl.textContent = 'Connection error';
+<canvas id="viz"></canvas>
 
-    ws.onmessage = async (e) => {
-      const msg = JSON.parse(e.data);
+<!-- Firebase -->
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
 
-      // Keepalive ping — reply with pong so server knows we're alive
-      if (msg.type === 'ping') {
-        ws.send(JSON.stringify({ type: 'pong' }));
-        return;
-      }
-
-      // Status update broadcast from server (start/stop confirmed)
-      if (msg.status) {
-        const running = msg.status === 'start';
-        streamEl.textContent    = running ? '🟢 Streaming active' : '🔴 Streaming stopped';
-        streamEl.style.color    = running ? '#1D9E75' : '#c0392b';
-        startBtn.disabled       = running;
-        stopBtn.disabled        = !running;
-        statusEl.textContent    = running ? 'Audio streaming started' : 'Audio streaming stopped';
-        return;
-      }
-
-      // Audio frame
-      if (!msg.audio) return;
-      const bytes  = new Uint8Array(msg.audio.match(/.{1,2}/g).map(b => parseInt(b, 16)));
-      const pcm    = new Int16Array(bytes.buffer);
-
-      if (!audioCtx) audioCtx = new AudioContext({ sampleRate: SAMPLE_RATE });
-
-      const float32 = new Float32Array(pcm.length);
-      for (let i = 0; i < pcm.length; i++) float32[i] = pcm[i] / 32768;
-
-      const buffer = audioCtx.createBuffer(1, float32.length, SAMPLE_RATE);
-      buffer.copyToChannel(float32, 0);
-      const source = audioCtx.createBufferSource();
-      source.buffer = buffer;
-      source.connect(audioCtx.destination);
-      source.start();
-      drawWave(float32);
-
-      if (isRecording) recordedChunks.push(...pcm);
+<script>
+/* ─────────────────────────────
+   FIREBASE CONFIG (REPLACE THIS)
+───────────────────────────── */
+   const firebaseConfig = {
+        apiKey: "AIzaSyDESRIO-UrfdLtizx-NnyGYbc3siYJn69I",
+        authDomain: "videoxyz12-99048.firebaseapp.com",
+        databaseURL: "https://videoxyz12-99048-default-rtdb.firebaseio.com",
+        projectId: "videoxyz12-99048",
+        storageBucket: "videoxyz12-99048.appspot.com",
+        messagingSenderId: "160214659694",
+        appId: "1:160214659694:web:65cddc8c03acbf9296ec7f",
+        measurementId: "G-L3GJQYHL8T"
     };
 
-    function sendCommand(cmd) {
-      if (ws.readyState === WebSocket.OPEN) {
-        ws.send(JSON.stringify({ command: cmd }));
-        statusEl.textContent = `Sending command: ${cmd}…`;
-      } else {
-        statusEl.textContent = 'Not connected — please refresh';
-      }
+firebase.initializeApp(firebaseConfig);
+const db = firebase.database();
+
+/* ─────────────────────────────
+   DOM
+───────────────────────────── */
+const statusEl = document.getElementById("status");
+const streamEl = document.getElementById("streamState");
+const firebaseState = document.getElementById("firebaseState");
+const canvas = document.getElementById("viz");
+const ctx = canvas.getContext("2d");
+
+/* ─────────────────────────────
+   WEB SOCKET (AUDIO ONLY)
+───────────────────────────── */
+const ws = new WebSocket("wss://audio-share-bxfc.onrender.com/ws/browser/");
+
+let audioCtx;
+const SAMPLE_RATE = 16000;
+
+ws.onopen = () => statusEl.textContent = "WebSocket connected";
+ws.onclose = () => statusEl.textContent = "WebSocket closed";
+ws.onerror = () => statusEl.textContent = "WebSocket error";
+
+ws.onmessage = (e) => {
+  const msg = JSON.parse(e.data);
+
+  if (msg.type === "ping") {
+    ws.send(JSON.stringify({ type: "pong" }));
+    return;
+  }
+
+  if (!msg.audio) return;
+
+  const bytes = new Uint8Array(
+    msg.audio.match(/.{1,2}/g).map(b => parseInt(b, 16))
+  );
+
+  const pcm = new Int16Array(bytes.buffer);
+
+  if (!audioCtx)
+    audioCtx = new AudioContext({ sampleRate: SAMPLE_RATE });
+
+  const float32 = new Float32Array(pcm.length);
+
+  for (let i = 0; i < pcm.length; i++)
+    float32[i] = pcm[i] / 32768;
+
+  const buffer = audioCtx.createBuffer(1, float32.length, SAMPLE_RATE);
+  buffer.copyToChannel(float32, 0);
+
+  const source = audioCtx.createBufferSource();
+  source.buffer = buffer;
+  source.connect(audioCtx.destination);
+  source.start();
+
+  drawWave(float32);
+};
+
+/* ─────────────────────────────
+   FIREBASE START / STOP LISTENER
+───────────────────────────── */
+db.ref("control/audio_stream/command")
+  .on("value", (snapshot) => {
+
+    const cmd = snapshot.val();
+
+    firebaseState.textContent = cmd;
+
+    if (cmd === "start") {
+      streamEl.textContent = "🟢 Streaming active";
+      streamEl.style.color = "#1D9E75";
     }
 
-    function toggleRecord() {
-      isRecording = !isRecording;
-      const btn = document.getElementById('recBtn');
-      btn.textContent = isRecording ? '⏹ Stop Recording' : '⏺ Record';
-      btn.style.background = isRecording ? '#e67e22' : '#7F77DD';
-      if (!isRecording && recordedChunks.length) downloadRecording();
+    if (cmd === "stop") {
+      streamEl.textContent = "🔴 Streaming stopped";
+      streamEl.style.color = "#c0392b";
     }
+  });
 
-    function downloadRecording() {
-      const pcm    = new Int16Array(recordedChunks);
-      const blob   = new Blob([pcm.buffer], { type: 'audio/pcm' });
-      const url    = URL.createObjectURL(blob);
-      const a      = document.createElement('a');
-      a.href       = url;
-      a.download   = `recording_${Date.now()}.pcm`;
-      a.click();
-      recordedChunks = [];
-    }
+/* ─────────────────────────────
+   WAVEFORM
+───────────────────────────── */
+function drawWave(data) {
+  canvas.width = canvas.offsetWidth;
+  canvas.height = canvas.offsetHeight;
 
-    function drawWave(float32) {
-      canvas.width  = canvas.offsetWidth;
-      canvas.height = canvas.offsetHeight;
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
-      ctx.strokeStyle = '#1D9E75';
-      ctx.lineWidth   = 1.5;
-      ctx.beginPath();
-      const step = Math.ceil(float32.length / canvas.width);
-      const mid  = canvas.height / 2;
-      for (let x = 0; x < canvas.width; x++) {
-        const sample = float32[x * step] ?? 0;
-        const y = mid + sample * mid;
-        x === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
-      }
-      ctx.stroke();
-    }
-  </script>
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  ctx.strokeStyle = "#1D9E75";
+  ctx.beginPath();
+
+  const step = Math.ceil(data.length / canvas.width);
+  const mid = canvas.height / 2;
+
+  for (let x = 0; x < canvas.width; x++) {
+    const sample = data[x * step] || 0;
+    const y = mid + sample * mid;
+
+    x === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+  }
+
+  ctx.stroke();
+}
+</script>
+
 </body>
 </html>
